@@ -1,0 +1,7 @@
+endpoint: ''
+api-key: ''
+# Optional. Leave empty when Ingest identifies the server from the API key.
+server-id: ''
+interval-seconds: 300
+# May query external land plugins on the server thread.
+collect-claims: false
