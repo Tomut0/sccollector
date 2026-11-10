@@ -14,6 +14,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Logger;
 
 final class IngestClient {
     private final URI endpoint;
@@ -42,7 +43,15 @@ final class IngestClient {
     }
 
     void send(Map<String, Object> snapshot) throws IOException {
-        byte[] body = json.toJson(snapshot).getBytes(StandardCharsets.UTF_8);
+        send(snapshot, null);
+    }
+
+    void send(Map<String, Object> snapshot, Logger debugLogger) throws IOException {
+        String payload = json.toJson(snapshot);
+        if (debugLogger != null) {
+            debugLogger.info("[debug] Ingest payload: " + payload);
+        }
+        byte[] body = payload.getBytes(StandardCharsets.UTF_8);
         HttpURLConnection connection = (HttpURLConnection) endpoint.toURL().openConnection();
         try {
             connection.setInstanceFollowRedirects(false);

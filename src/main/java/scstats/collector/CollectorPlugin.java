@@ -45,6 +45,7 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
     private volatile Feed feed;
     private Snapshot snapshot;
     private IngestClient client;
+    private volatile boolean debugEnabled;
     private BukkitTask task;
     private CompletableFuture<Boolean> sending;
     private Feed sentFeed;
@@ -54,6 +55,7 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         simpleClans = (SimpleClans) getServer().getPluginManager().getPlugin("SimpleClans");
         saveDefaultConfig();
+        debugEnabled = getConfig().getBoolean("debug", true);
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("scstats").setTabCompleter((sender, command, alias, args) -> Collections.emptyList());
         String endpoint = getConfig().getString("endpoint", "");
@@ -78,6 +80,7 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
         snapshot = new Snapshot(simpleClans, feed);
         long period = Math.max(5, getConfig().getInt("interval-seconds")) * 20L;
         task = getServer().getScheduler().runTaskTimer(this, this::publish, 1L, period);
+        debug("Ingest configured; snapshots scheduled every " + period / 20L + " seconds.");
     }
 
     @Override
@@ -89,6 +92,17 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("ingest")) {
+            debug("Manual ingest requested.");
+            if (client == null) {
+                sender.sendMessage("SCCollector Ingest is not configured.");
+            } else if (publish()) {
+                sender.sendMessage("SCCollector started a manual snapshot push.");
+            } else {
+                sender.sendMessage("SCCollector is already sending a snapshot.");
+            }
+            return true;
+        }
         if (args.length != 6 || !args[0].equals("config") || !args[1].equals("apply")
                 || !args[2].equals("--endpoint") || !args[4].equals("--api-key")) {
             return false;
@@ -124,12 +138,13 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
             Files.deleteIfExists(temporary);
         }
         reloadConfig();
+        debugEnabled = getConfig().getBoolean("debug", true);
     }
 
-    private void publish() {
+    private boolean publish() {
         if (sending != null) {
             if (!sending.isDone()) {
-                return;
+                return false;
             }
             if (sending.join()) {
                 sentFeed.acknowledge(sentEvents);
@@ -146,18 +161,20 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
             data = snapshot.capture(serverId, getConfig().getBoolean("collect-claims"), invites.values(), events);
         } catch (RuntimeException captureFailed) {
             getLogger().log(Level.WARNING, "Could not collect a SimpleClans snapshot.", captureFailed);
-            return;
+            return false;
         }
         IngestClient destination = client;
         CompletableFuture<Boolean> result = new CompletableFuture<>();
         sentFeed = feed;
         sentEvents = events;
         sending = result;
+        debug("Sending snapshot with " + events.size() + " pending events.");
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             boolean accepted = false;
             try {
-                destination.send(data);
+                destination.send(data, debugEnabled ? getLogger() : null);
                 accepted = true;
+                debug("Ingest accepted the snapshot.");
             } catch (IOException | RuntimeException sendFailed) {
                 String detail = sendFailed.getMessage();
                 if (detail == null || !detail.startsWith("Ingest ")) {
@@ -168,6 +185,13 @@ public final class CollectorPlugin extends JavaPlugin implements Listener {
                 result.complete(accepted);
             }
         });
+        return true;
+    }
+
+    private void debug(String message) {
+        if (debugEnabled) {
+            getLogger().info("[debug] " + message);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

@@ -4,9 +4,9 @@ main: scstats.collector.CollectorPlugin
 depend: [SimpleClans]
 commands:
   scstats:
-    description: Configure the SimpleClansStats collector
+    description: Manage the SimpleClansStats collector
     permission: sccollector.configure
-    usage: /scstats config apply --endpoint <url> --api-key <key>
+    usage: /scstats ingest | /scstats config apply --endpoint <url> --api-key <key>
 permissions:
   sccollector.configure:
     default: op
